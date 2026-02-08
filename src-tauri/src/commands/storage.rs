@@ -149,7 +149,8 @@ pub async fn storage_read_table(
         let search_conditions: Vec<String> = columns
             .iter()
             .filter(|col| col.type_name.contains("TEXT") || col.type_name.contains("VARCHAR"))
-            .map(|col| format!("{} LIKE '%{}%'", col.name, search.replace("'", "''")))
+            .filter(|col| is_safe_identifier(&col.name))
+            .map(|col| format!("\"{}\" LIKE '%{}%'", col.name, search.replace("'", "''")))
             .collect();
 
         if search_conditions.is_empty() {
@@ -243,17 +244,24 @@ pub async fn storage_update_row(
         return Err("Invalid table name".to_string());
     }
 
+    // Validate all column names
+    for key in updates.keys().chain(primaryKeyValues.keys()) {
+        if !is_safe_identifier(key) {
+            return Err(format!("Invalid column name: {}", key));
+        }
+    }
+
     // Build UPDATE query
     let set_clauses: Vec<String> = updates
         .keys()
         .enumerate()
-        .map(|(idx, key)| format!("{} = ?{}", key, idx + 1))
+        .map(|(idx, key)| format!("\"{}\" = ?{}", key, idx + 1))
         .collect();
 
     let where_clauses: Vec<String> = primaryKeyValues
         .keys()
         .enumerate()
-        .map(|(idx, key)| format!("{} = ?{}", key, idx + updates.len() + 1))
+        .map(|(idx, key)| format!("\"{}\" = ?{}", key, idx + updates.len() + 1))
         .collect();
 
     let query = format!(
@@ -301,11 +309,18 @@ pub async fn storage_delete_row(
         return Err("Invalid table name".to_string());
     }
 
+    // Validate column names
+    for key in primaryKeyValues.keys() {
+        if !is_safe_identifier(key) {
+            return Err(format!("Invalid column name: {}", key));
+        }
+    }
+
     // Build DELETE query
     let where_clauses: Vec<String> = primaryKeyValues
         .keys()
         .enumerate()
-        .map(|(idx, key)| format!("{} = ?{}", key, idx + 1))
+        .map(|(idx, key)| format!("\"{}\" = ?{}", key, idx + 1))
         .collect();
 
     let query = format!(
@@ -345,16 +360,21 @@ pub async fn storage_insert_row(
         return Err("Invalid table name".to_string());
     }
 
-    // Build INSERT query
+    // Validate and build INSERT query
     let columns: Vec<&String> = values.keys().collect();
+    for col in &columns {
+        if !is_safe_identifier(col) {
+            return Err(format!("Invalid column name: {}", col));
+        }
+    }
     let placeholders: Vec<String> = (1..=columns.len()).map(|i| format!("?{}", i)).collect();
 
     let query = format!(
-        "INSERT INTO {} ({}) VALUES ({})",
+        "INSERT INTO \"{}\" ({}) VALUES ({})",
         tableName,
         columns
             .iter()
-            .map(|c| c.as_str())
+            .map(|c| format!("\"{}\"", c))
             .collect::<Vec<_>>()
             .join(", "),
         placeholders.join(", ")
@@ -376,7 +396,7 @@ pub async fn storage_insert_row(
     Ok(conn.last_insert_rowid())
 }
 
-/// Execute a raw SQL query
+/// Execute a raw SQL query (restricted to read-only operations)
 #[tauri::command]
 pub async fn storage_execute_sql(
     db: State<'_, AgentDb>,
@@ -384,8 +404,16 @@ pub async fn storage_execute_sql(
 ) -> Result<QueryResult, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
 
-    // Check if it's a SELECT query
-    let is_select = query.trim().to_uppercase().starts_with("SELECT");
+    // Only allow SELECT queries to prevent destructive operations
+    let normalized = query.trim().to_uppercase();
+    let is_select = normalized.starts_with("SELECT") || normalized.starts_with("PRAGMA");
+
+    let dangerous_keywords = ["DROP", "ALTER", "ATTACH", "DETACH", "CREATE", "INSERT", "UPDATE", "DELETE"];
+    for keyword in &dangerous_keywords {
+        if normalized.starts_with(keyword) {
+            return Err(format!("Operation not allowed: {} queries are blocked for safety", keyword));
+        }
+    }
 
     if is_select {
         // Handle SELECT queries
@@ -492,6 +520,12 @@ pub async fn storage_reset_database(app: AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Helper function to validate a SQL identifier (table or column name).
+/// Only allows alphanumeric characters and underscores to prevent SQL injection.
+fn is_safe_identifier(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
 /// Helper function to validate table name exists

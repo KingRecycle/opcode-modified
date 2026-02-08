@@ -28,7 +28,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "**"
+          "$APPDATA/opcode/**",
+          "$RESOURCE/**"
         ]
       }
     }
@@ -51,7 +52,7 @@
       ]
     },
     "shell": {
-      "open": true
+      "open": "^https?://"
     }
   },
   "bundle": {

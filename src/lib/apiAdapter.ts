@@ -44,8 +44,6 @@ function detectEnvironment(): boolean {
     navigator.userAgent.includes('Tauri')
   );
 
-  console.log('[detectEnvironment] isTauri:', isTauri, 'userAgent:', navigator.userAgent);
-  
   isTauriEnvironment = isTauri;
   return isTauri;
 }
@@ -65,8 +63,6 @@ interface ApiResponse<T> {
 async function restApiCall<T>(endpoint: string, params?: any): Promise<T> {
   // First handle path parameters in the endpoint string
   let processedEndpoint = endpoint;
-  console.log(`[REST API] Original endpoint: ${endpoint}, params:`, params);
-  
   if (params) {
     Object.keys(params).forEach(key => {
       // Try different case variations for the placeholder
@@ -78,14 +74,11 @@ async function restApiCall<T>(endpoint: string, params?: any): Promise<T> {
       
       placeholders.forEach(placeholder => {
         if (processedEndpoint.includes(placeholder)) {
-          console.log(`[REST API] Replacing ${placeholder} with ${params[key]}`);
           processedEndpoint = processedEndpoint.replace(placeholder, encodeURIComponent(String(params[key])));
         }
       });
     });
   }
-  
-  console.log(`[REST API] Processed endpoint: ${processedEndpoint}`);
   
   const url = new URL(processedEndpoint, window.location.origin);
   
@@ -135,13 +128,8 @@ export async function apiCall<T>(command: string, params?: any): Promise<T> {
   const isWeb = !detectEnvironment();
   
   if (!isWeb) {
-    // Tauri environment - use invoke directly
-    console.log(`[Tauri] Calling: ${command}`, params);
     return await invoke<T>(command, params);
   }
-  
-  // Web environment - use REST API
-  console.log(`[Web] Calling: ${command}`, params);
   
   // Special handling for commands that use streaming/events
   const streamingCommands = ['execute_claude_code', 'continue_claude_code', 'resume_claude_code'];
@@ -282,124 +270,58 @@ async function handleStreamingCommand<T>(command: string, params?: any): Promise
     // Use wss:// for HTTPS connections (e.g., ngrok), ws:// for HTTP (localhost)
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/claude`;
-    console.log(`[TRACE] handleStreamingCommand called:`);
-    console.log(`[TRACE]   command: ${command}`);
-    console.log(`[TRACE]   params:`, params);
-    console.log(`[TRACE]   WebSocket URL: ${wsUrl}`);
-    
     const ws = new WebSocket(wsUrl);
-    
+
     ws.onopen = () => {
-      console.log(`[TRACE] WebSocket opened successfully`);
-      
-      // Send execution request
       const request = {
-        command_type: command.replace('_claude_code', ''), // execute, continue, resume
+        command_type: command.replace('_claude_code', ''),
         project_path: params?.projectPath || '',
         prompt: params?.prompt || '',
         model: params?.model || 'claude-3-5-sonnet-20241022',
         session_id: params?.sessionId,
       };
-      
-      console.log(`[TRACE] Sending WebSocket request:`, request);
-      console.log(`[TRACE] Request JSON:`, JSON.stringify(request));
-      
       ws.send(JSON.stringify(request));
-      console.log(`[TRACE] WebSocket request sent`);
     };
-    
+
     ws.onmessage = (event) => {
-      console.log(`[TRACE] WebSocket message received:`, event.data);
       try {
         const message = JSON.parse(event.data);
-        console.log(`[TRACE] Parsed WebSocket message:`, message);
-        
-        if (message.type === 'start') {
-          console.log(`[TRACE] Start message: ${message.message}`);
-        } else if (message.type === 'output') {
-          console.log(`[TRACE] Output message, content length: ${message.content?.length || 0}`);
-          console.log(`[TRACE] Raw content:`, message.content);
-          
-          // The backend sends Claude output as a JSON string in the content field
-          // We need to parse this to get the actual Claude message
+
+        if (message.type === 'output') {
           try {
-            const claudeMessage = typeof message.content === 'string' 
-              ? JSON.parse(message.content) 
+            const claudeMessage = typeof message.content === 'string'
+              ? JSON.parse(message.content)
               : message.content;
-            console.log(`[TRACE] Parsed Claude message:`, claudeMessage);
-            
-            // Simulate Tauri event for compatibility with existing UI
-            const customEvent = new CustomEvent('claude-output', {
-              detail: claudeMessage
-            });
-            console.log(`[TRACE] Dispatching claude-output event:`, customEvent.detail);
-            console.log(`[TRACE] Event type:`, customEvent.type);
-            window.dispatchEvent(customEvent);
+            window.dispatchEvent(new CustomEvent('claude-output', { detail: claudeMessage }));
           } catch (e) {
-            console.error(`[TRACE] Failed to parse Claude output content:`, e);
-            console.error(`[TRACE] Content that failed to parse:`, message.content);
+            console.error('Failed to parse Claude output content:', e);
           }
         } else if (message.type === 'completion') {
-          console.log(`[TRACE] Completion message:`, message);
-          
-          // Dispatch claude-complete event for UI state management
-          const completeEvent = new CustomEvent('claude-complete', {
-            detail: message.status === 'success'
-          });
-          console.log(`[TRACE] Dispatching claude-complete event:`, completeEvent.detail);
-          window.dispatchEvent(completeEvent);
-          
+          window.dispatchEvent(new CustomEvent('claude-complete', { detail: message.status === 'success' }));
           ws.close();
           if (message.status === 'success') {
-            console.log(`[TRACE] Resolving promise with success`);
-            resolve({} as T); // Return empty object for now
+            resolve({} as T);
           } else {
-            console.log(`[TRACE] Rejecting promise with error: ${message.error}`);
             reject(new Error(message.error || 'Execution failed'));
           }
         } else if (message.type === 'error') {
-          console.log(`[TRACE] Error message:`, message);
-          
-          // Dispatch claude-error event for UI error handling
-          const errorEvent = new CustomEvent('claude-error', {
-            detail: message.message || 'Unknown error'
-          });
-          console.log(`[TRACE] Dispatching claude-error event:`, errorEvent.detail);
-          window.dispatchEvent(errorEvent);
-          
+          window.dispatchEvent(new CustomEvent('claude-error', { detail: message.message || 'Unknown error' }));
           reject(new Error(message.message || 'Unknown error'));
-        } else {
-          console.log(`[TRACE] Unknown message type: ${message.type}`);
         }
       } catch (e) {
-        console.error('[TRACE] Failed to parse WebSocket message:', e);
-        console.error('[TRACE] Raw message:', event.data);
+        console.error('Failed to parse WebSocket message:', e);
       }
     };
-    
+
     ws.onerror = (error) => {
-      console.error('[TRACE] WebSocket error:', error);
-      
-      // Dispatch claude-error event for connection errors
-      const errorEvent = new CustomEvent('claude-error', {
-        detail: 'WebSocket connection failed'
-      });
-      console.log(`[TRACE] Dispatching claude-error event for WebSocket error`);
-      window.dispatchEvent(errorEvent);
-      
+      console.error('WebSocket error:', error);
+      window.dispatchEvent(new CustomEvent('claude-error', { detail: 'WebSocket connection failed' }));
       reject(new Error('WebSocket connection failed'));
     };
-    
+
     ws.onclose = (event) => {
-      console.log(`[TRACE] WebSocket closed - code: ${event.code}, reason: ${event.reason}`);
-      
-      // If connection closed unexpectedly (not a normal close), dispatch cancelled event
       if (event.code !== 1000 && event.code !== 1001) {
-        const cancelEvent = new CustomEvent('claude-complete', {
-          detail: false // false indicates cancellation/failure
-        });
-        console.log(`[TRACE] Dispatching claude-complete event for unexpected close`);
-        window.dispatchEvent(cancelEvent);
+        window.dispatchEvent(new CustomEvent('claude-complete', { detail: false }));
       }
     };
   });

@@ -37,3 +37,11 @@ CLAUDE.md
 .claude/
 
 .env
+
+# Windows reserved device names (create phantom files in git)
+CON
+PRN
+AUX
+NUL
+COM[1-9]
+LPT[1-9]

@@ -14,21 +14,16 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  
+
   const eventListenerRef = useRef<(() => void) | null>(null);
   const accumulatedContentRef = useRef<{ [key: string]: string }>({});
 
   const handleMessage = useCallback((message: ClaudeStreamMessage) => {
-    console.log('[TRACE] useClaudeMessages.handleMessage called with:', message);
-    
     if ((message as any).type === "start") {
-      console.log('[TRACE] Start message detected - clearing accumulated content and setting streaming=true');
-      // Clear accumulated content for new stream
       accumulatedContentRef.current = {};
       setIsStreaming(true);
       options.onStreamingChange?.(true, currentSessionId);
     } else if ((message as any).type === "partial") {
-      console.log('[TRACE] Partial message detected');
       if (message.tool_calls && message.tool_calls.length > 0) {
         message.tool_calls.forEach((toolCall: any) => {
           if (toolCall.content && toolCall.partial_tool_call_index !== undefined) {
@@ -42,32 +37,19 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
         });
       }
     } else if ((message as any).type === "response" && message.message?.usage) {
-      console.log('[TRACE] Response message with usage detected');
-      const totalTokens = (message.message.usage.input_tokens || 0) + 
+      const totalTokens = (message.message.usage.input_tokens || 0) +
                          (message.message.usage.output_tokens || 0);
-      console.log('[TRACE] Total tokens:', totalTokens);
       options.onTokenUpdate?.(totalTokens);
     } else if ((message as any).type === "error" || (message as any).type === "response") {
-      console.log('[TRACE] Error or response message detected - setting streaming=false');
       setIsStreaming(false);
       options.onStreamingChange?.(false, currentSessionId);
-    } else if ((message as any).type === "output") {
-      console.log('[TRACE] Output message detected, content:', (message as any).content);
-    } else {
-      console.log('[TRACE] Unknown message type:', (message as any).type);
     }
 
-    console.log('[TRACE] Adding message to state');
-    setMessages(prev => {
-      const newMessages = [...prev, message];
-      console.log('[TRACE] Total messages now:', newMessages.length);
-      return newMessages;
-    });
+    setMessages(prev => [...prev, message]);
     setRawJsonlOutput(prev => [...prev, JSON.stringify(message)]);
 
     // Extract session info
     if ((message as any).type === "session_info" && (message as any).session_id && (message as any).project_id) {
-      console.log('[TRACE] Session info detected:', (message as any).session_id, (message as any).project_id);
       options.onSessionInfo?.({
         sessionId: (message as any).session_id,
         projectId: (message as any).project_id
@@ -85,11 +67,10 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
   const loadMessages = useCallback(async (sessionId: string) => {
     try {
       const output = await api.getSessionOutput(parseInt(sessionId));
-      // Note: API returns a string, not an array of outputs
       const outputs = [{ jsonl: output }];
       const loadedMessages: ClaudeStreamMessage[] = [];
       const loadedRawJsonl: string[] = [];
-      
+
       outputs.forEach(output => {
         if (output.jsonl) {
           const lines = output.jsonl.split('\n').filter(line => line.trim());
@@ -104,7 +85,7 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
           });
         }
       });
-      
+
       setMessages(loadedMessages);
       setRawJsonlOutput(loadedRawJsonl);
     } catch (error) {
@@ -116,13 +97,10 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
   // Set up event listener
   useEffect(() => {
     const setupListener = async () => {
-      console.log('[TRACE] useClaudeMessages setupListener called');
       if (eventListenerRef.current) {
-        console.log('[TRACE] Cleaning up existing event listener');
         eventListenerRef.current();
       }
-      
-      // Use Tauri event system to listen for Claude stream messages
+
       eventListenerRef.current = await listen("claude-output", (event: any) => {
         try {
           const message = JSON.parse(event.payload) as ClaudeStreamMessage;
@@ -136,7 +114,6 @@ export function useClaudeMessages(options: UseClaudeMessagesOptions = {}) {
     setupListener();
 
     return () => {
-      console.log('[TRACE] useClaudeMessages cleanup');
       if (eventListenerRef.current) {
         eventListenerRef.current();
       }
