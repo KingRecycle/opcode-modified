@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api, type Agent } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { MODEL_INFO } from "@/lib/models";
 import MDEditor from "@uiw/react-md-editor";
 import { type AgentIconName } from "./CCAgents";
 import { IconPicker, ICON_MAP } from "./IconPicker";
@@ -257,8 +258,8 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
                         model === "sonnet" ? "text-primary" : "text-muted-foreground"
                       )} />
                       <div className="text-left">
-                        <div className="text-body-small font-medium">Claude 4 Sonnet</div>
-                        <div className="text-caption text-muted-foreground">Faster, efficient for most tasks</div>
+                        <div className="text-body-small font-medium">{MODEL_INFO.sonnet.name}</div>
+                        <div className="text-caption text-muted-foreground">{MODEL_INFO.sonnet.description}</div>
                       </div>
                     </div>
                   </motion.button>
@@ -281,8 +282,8 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
                         model === "opus" ? "text-primary" : "text-muted-foreground"
                       )} />
                       <div className="text-left">
-                        <div className="text-body-small font-medium">Claude 4 Opus</div>
-                        <div className="text-caption text-muted-foreground">More capable, better for complex tasks</div>
+                        <div className="text-body-small font-medium">{MODEL_INFO.opus.name}</div>
+                        <div className="text-caption text-muted-foreground">{MODEL_INFO.opus.description}</div>
                       </div>
                     </div>
                   </motion.button>

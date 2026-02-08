@@ -15,6 +15,7 @@ import {
   
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MODEL_INFO } from "@/lib/models";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
@@ -103,7 +104,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     level: 0,
     icon: <Sparkles className="h-3.5 w-3.5" />,
     color: "text-muted-foreground",
-    shortName: "A"
+    shortName: "Auto"
   },
   {
     id: "think",
@@ -113,7 +114,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "think",
     icon: <Lightbulb className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T"
+    shortName: "Think"
   },
   {
     id: "think_hard",
@@ -123,7 +124,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "think hard",
     icon: <Brain className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T+"
+    shortName: "Think Hard"
   },
   {
     id: "think_harder",
@@ -133,7 +134,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "think harder",
     icon: <Cpu className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T++"
+    shortName: "Think Harder"
   },
   {
     id: "ultrathink",
@@ -143,7 +144,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "ultrathink",
     icon: <Rocket className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "Ultra"
+    shortName: "Ultrathink"
   }
 ];
 
@@ -184,18 +185,18 @@ type Model = {
 const MODELS: Model[] = [
   {
     id: "sonnet",
-    name: "Claude 4 Sonnet",
-    description: "Faster, efficient for most tasks",
+    name: MODEL_INFO.sonnet.name,
+    description: MODEL_INFO.sonnet.description,
     icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "S",
+    shortName: MODEL_INFO.sonnet.name,
     color: "text-primary"
   },
   {
     id: "opus",
-    name: "Claude 4 Opus",
-    description: "More capable, better for complex tasks",
+    name: MODEL_INFO.opus.name,
+    description: MODEL_INFO.opus.description,
     icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "O",
+    shortName: MODEL_INFO.opus.name,
     color: "text-primary"
   }
 ];
@@ -225,8 +226,33 @@ const FloatingPromptInputInner = (
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
   const [prompt, setPrompt] = useState("");
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">(defaultModel);
-  const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
+  const [selectedModel, setSelectedModelState] = useState<"sonnet" | "opus">(() => {
+    try {
+      const saved = localStorage.getItem("opcode-selected-model");
+      return saved === "sonnet" || saved === "opus" ? saved : defaultModel;
+    } catch {
+      return defaultModel;
+    }
+  });
+  const [selectedThinkingMode, setSelectedThinkingModeState] = useState<ThinkingMode>(() => {
+    try {
+      const saved = localStorage.getItem("opcode-thinking-mode");
+      const valid: ThinkingMode[] = ["auto", "think", "think_hard", "think_harder", "ultrathink"];
+      return valid.includes(saved as ThinkingMode) ? (saved as ThinkingMode) : "auto";
+    } catch {
+      return "auto";
+    }
+  });
+
+  const setSelectedModel = (model: "sonnet" | "opus") => {
+    setSelectedModelState(model);
+    try { localStorage.setItem("opcode-selected-model", model); } catch { /* noop */ }
+  };
+
+  const setSelectedThinkingMode = (mode: ThinkingMode) => {
+    setSelectedThinkingModeState(mode);
+    try { localStorage.setItem("opcode-thinking-mode", mode); } catch { /* noop */ }
+  };
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [thinkingModePickerOpen, setThinkingModePickerOpen] = useState(false);
@@ -1099,7 +1125,7 @@ const FloatingPromptInputInner = (
                               <span className={selectedModelData.color}>
                                 {selectedModelData.icon}
                               </span>
-                              <span className="text-[10px] font-bold opacity-70">
+                              <span className="text-xs font-medium opacity-70">
                                 {selectedModelData.shortName}
                               </span>
                               <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
@@ -1165,7 +1191,7 @@ const FloatingPromptInputInner = (
                               <span className={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.color}>
                                 {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.icon}
                               </span>
-                              <span className="text-[10px] font-semibold opacity-70">
+                              <span className="text-xs font-medium opacity-70">
                                 {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.shortName}
                               </span>
                               <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
