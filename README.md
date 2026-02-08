@@ -17,9 +17,17 @@
 ### Changes from upstream
 
 - **Fixed settings save failures** — Tauri invoke errors were silently falling back to a read-only REST API, causing saves to fail with cryptic HTML parse errors. Errors now propagate directly.
-- **Fixed console window flashing** — All subprocess calls during Claude binary discovery now use `CREATE_NO_WINDOW` to prevent terminal windows from briefly appearing on Windows.
+- **Fixed console window flashing** — All subprocess calls (binary discovery and Claude execution) now use `CREATE_NO_WINDOW` to prevent terminal windows from briefly appearing on Windows.
 - **Fixed PATH-based binary validation** — `set_claude_binary_path` now resolves commands via `where`/`which` so bare PATH names like `claude.exe` are accepted.
+- **Fixed real-time streaming** — Replaced dynamic `require()` with static ESM imports for the Tauri event listener, fixing messages only appearing after app restart.
+- **Fixed Windows subprocess environment** — Claude processes now inherit all environment variables on Windows (Node.js needs APPDATA, USERPROFILE, SYSTEMROOT, TEMP, etc.).
 - **Improved error messages** — Settings save errors now display the specific failure reason instead of a generic message.
+- **Updated model names** — Corrected outdated "Claude 4 Opus/Sonnet" to "Opus 4.6" and "Sonnet 4.5" with centralized definitions.
+- **Bigger model/thinking selectors** — Selector buttons now show full names ("Sonnet 4.5", "Opus 4.6", "Auto", "Think", etc.) instead of single-letter abbreviations.
+- **Persistent selections** — Model and thinking mode choices are saved to localStorage and restored on app restart.
+- **Model label on responses** — AI response bubbles now show which model was used under the Bot icon.
+- **Compact result stats** — The "Execution Complete" card is now a slim stats bar (cost, duration, turns, tokens) instead of duplicating the response text.
+- **Deduplicated system init** — "System Initialized" widget only appears once per conversation instead of on every message.
 
 ---
 
