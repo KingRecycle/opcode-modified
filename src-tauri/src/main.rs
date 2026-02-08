@@ -51,6 +51,7 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
+
 fn main() {
     // Initialize logger
     env_logger::init();

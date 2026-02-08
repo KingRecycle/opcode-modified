@@ -345,6 +345,72 @@ html.is-macos body {
   box-shadow: inset 0 0 0 1px var(--color-border);
 }
 
+/* ── Windows Fluent Design Overrides ── */
+
+/* Window corners — DWM handles rounding natively on Windows 11 */
+html.is-windows {
+  border-radius: 0;
+  clip-path: none;
+}
+
+html.is-windows body {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html.is-windows #root {
+  border-radius: 0;
+}
+
+/* Typography — Segoe UI Variable for Windows 11, Segoe UI fallback */
+html.is-windows {
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+/* Border radius — tighter for Fluent Design */
+html.is-windows {
+  --radius-sm: 2px;
+  --radius-base: 4px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+}
+
+/* Scrollbars — wider and more visible for Windows */
+html.is-windows ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.is-windows ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html.is-windows ::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.4);
+  border-radius: 4px;
+}
+
+html.is-windows ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.6);
+}
+
+html.is-windows * {
+  scrollbar-width: auto;
+}
+
+/* Motion easing — Fluent deceleration curve */
+html.is-windows {
+  --ease-smooth: cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+/* Shadows — more pronounced Fluent elevation for floating surfaces */
+html.is-windows [data-radix-popper-content-wrapper] > *,
+html.is-windows [role="dialog"],
+html.is-windows [role="tooltip"] {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24), 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
 /* Typography Utility Classes */
 .text-display-1 {
   font-size: var(--text-5xl);

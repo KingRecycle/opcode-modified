@@ -72,6 +72,7 @@ window-vibrancy = "0.5"
 cocoa = "0.26"
 objc = "0.2"
 
+
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
 custom-protocol = ["tauri/custom-protocol"]
