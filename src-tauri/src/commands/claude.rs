@@ -238,7 +238,23 @@ fn create_command_with_env(program: &str) -> Command {
     // Create a new tokio Command from the program path
     let mut tokio_cmd = Command::new(program);
 
-    // Copy over all environment variables
+    // Prevent console window flash on Windows
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        tokio_cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    // Inherit environment variables
+    // On Windows, inherit all env vars — Node.js needs APPDATA, USERPROFILE,
+    // SYSTEMROOT, TEMP, etc. to function correctly
+    #[cfg(windows)]
+    for (key, value) in std::env::vars() {
+        tokio_cmd.env(&key, &value);
+    }
+
+    #[cfg(not(windows))]
     for (key, value) in std::env::vars() {
         if key == "PATH"
             || key == "HOME"

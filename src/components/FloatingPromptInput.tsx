@@ -28,7 +28,7 @@ import { type FileEntry, type SlashCommand } from "@/lib/api";
 // Conditional import for Tauri webview window
 let tauriGetCurrentWebviewWindow: any;
 try {
-  if (typeof window !== 'undefined' && window.__TAURI__) {
+  if (typeof window !== 'undefined' && (window.__TAURI__ || window.__TAURI_INTERNALS__)) {
     tauriGetCurrentWebviewWindow = require("@tauri-apps/api/webviewWindow").getCurrentWebviewWindow;
   }
 } catch (e) {

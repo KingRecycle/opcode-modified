@@ -633,6 +633,14 @@ fn compare_versions(a: &str, b: &str) -> Ordering {
 pub fn create_command_with_env(program: &str) -> Command {
     let mut cmd = Command::new(program);
 
+    // Prevent console window flash on Windows
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     info!("Creating command for: {}", program);
 
     // Inherit essential environment variables from parent process

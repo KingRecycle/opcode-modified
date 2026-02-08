@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { MODEL_INFO } from "@/lib/models";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -58,6 +59,20 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
   // Get current theme
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
+
+  // Derive model display name from the most recent system init message
+  const modelDisplayName = React.useMemo(() => {
+    for (let i = streamMessages.length - 1; i >= 0; i--) {
+      const msg = streamMessages[i];
+      if (msg.type === "system" && msg.subtype === "init" && msg.model) {
+        const m = msg.model.toLowerCase();
+        if (m.includes("opus")) return MODEL_INFO.opus.name;
+        if (m.includes("sonnet")) return MODEL_INFO.sonnet.name;
+        return msg.model;
+      }
+    }
+    return null;
+  }, [streamMessages]);
   
   // Extract all tool results from stream messages
   useEffect(() => {
@@ -94,16 +109,20 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 
-    // System initialization message
+    // System initialization message — only show for the first init in the conversation
     if (message.type === "system" && message.subtype === "init") {
-      return (
-        <SystemInitializedWidget
-          sessionId={message.session_id}
-          model={message.model}
-          cwd={message.cwd}
-          tools={message.tools}
-        />
-      );
+      const firstInit = streamMessages.find(m => m.type === "system" && m.subtype === "init");
+      if (firstInit === message) {
+        return (
+          <SystemInitializedWidget
+            sessionId={message.session_id}
+            model={message.model}
+            cwd={message.cwd}
+            tools={message.tools}
+          />
+        );
+      }
+      return null;
     }
 
     // Assistant message
@@ -116,7 +135,12 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
         <Card className={cn("border-primary/20 bg-primary/5", className)}>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <Bot className="h-5 w-5 text-primary mt-0.5" />
+              <div className="flex flex-col items-center gap-0.5 shrink-0">
+                <Bot className="h-5 w-5 text-primary mt-0.5" />
+                {modelDisplayName && (
+                  <span className="text-[10px] text-muted-foreground leading-tight">{modelDisplayName}</span>
+                )}
+              </div>
               <div className="flex-1 space-y-2 min-w-0">
                 {msg.content && Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
                   // Text content - render as markdown
@@ -639,77 +663,52 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     if (message.type === "result") {
       const isError = message.is_error || message.subtype?.includes("error");
       
-      return (
-        <Card className={cn(
-          isError ? "border-destructive/20 bg-destructive/5" : "border-green-500/20 bg-green-500/5",
-          className
-        )}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              {isError ? (
+      // For errors, show the full error message
+      if (isError) {
+        return (
+          <Card className={cn("border-destructive/20 bg-destructive/5", className)}>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
-              ) : (
-                <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
-              )}
-              <div className="flex-1 space-y-2">
-                <h4 className="font-semibold text-sm">
-                  {isError ? "Execution Failed" : "Execution Complete"}
-                </h4>
-                
-                {message.result && (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={syntaxTheme}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
-                      {message.result}
-                    </ReactMarkdown>
-                  </div>
-                )}
-                
-                {message.error && (
-                  <div className="text-sm text-destructive">{message.error}</div>
-                )}
-                
-                <div className="text-xs text-muted-foreground space-y-1 mt-2">
-                  {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
-                    <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
+                <div className="flex-1 space-y-2">
+                  <h4 className="font-semibold text-sm">Execution Failed</h4>
+                  {message.error && (
+                    <div className="text-sm text-destructive">{message.error}</div>
                   )}
-                  {message.duration_ms !== undefined && (
-                    <div>Duration: {(message.duration_ms / 1000).toFixed(2)}s</div>
-                  )}
-                  {message.num_turns !== undefined && (
-                    <div>Turns: {message.num_turns}</div>
-                  )}
-                  {message.usage && (
-                    <div>
-                      Total tokens: {message.usage.input_tokens + message.usage.output_tokens} 
-                      ({message.usage.input_tokens} in, {message.usage.output_tokens} out)
-                    </div>
+                  {message.result && (
+                    <div className="text-sm text-destructive">{message.result}</div>
                   )}
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        );
+      }
+
+      // For success, show a compact stats bar (response text is already in the assistant message)
+      const hasStats = message.cost_usd !== undefined || message.total_cost_usd !== undefined ||
+        message.duration_ms !== undefined || message.num_turns !== undefined || message.usage;
+
+      if (!hasStats) return null;
+
+      return (
+        <div className={cn("flex items-center gap-3 text-xs text-muted-foreground px-2 py-1", className)}>
+          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+          <div className="flex items-center gap-3 flex-wrap">
+            {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
+              <span>${((message.cost_usd || message.total_cost_usd)!).toFixed(4)}</span>
+            )}
+            {message.duration_ms !== undefined && (
+              <span>{(message.duration_ms / 1000).toFixed(1)}s</span>
+            )}
+            {message.num_turns !== undefined && (
+              <span>{message.num_turns} turns</span>
+            )}
+            {message.usage && (
+              <span>{(message.usage.input_tokens + message.usage.output_tokens).toLocaleString()} tokens</span>
+            )}
+          </div>
+        </div>
       );
     }
 
