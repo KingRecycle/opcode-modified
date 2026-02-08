@@ -2,34 +2,26 @@
 <div align="center">
   <img src="src-tauri/icons/icon.png" alt="opcode Logo" width="120" height="120">
 
-  <h1>opcode</h1>
-  
+  <h1>opcode (modified)</h1>
+
   <p>
     <strong>A powerful GUI app and Toolkit for Claude Code</strong>
   </p>
   <p>
     <strong>Create custom agents, manage interactive Claude Code sessions, run secure background agents, and more.</strong>
   </p>
-  
-  <p>
-    <a href="#features"><img src="https://img.shields.io/badge/Features-✨-blue?style=for-the-badge" alt="Features"></a>
-    <a href="#installation"><img src="https://img.shields.io/badge/Install-🚀-green?style=for-the-badge" alt="Installation"></a>
-    <a href="#usage"><img src="https://img.shields.io/badge/Usage-📖-purple?style=for-the-badge" alt="Usage"></a>
-    <a href="#development"><img src="https://img.shields.io/badge/Develop-🛠️-orange?style=for-the-badge" alt="Development"></a>
-    <a href="https://discord.com/invite/KYwhHVzUsY"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  </p>
 </div>
 
-![457013521-6133a738-d0cb-4d3e-8746-c6768c82672c](https://github.com/user-attachments/assets/a028de9e-d881-44d8-bae5-7326ab3558b9)
+> **Fork Notice** — This is a fork of [winfunc/opcode](https://github.com/winfunc/opcode) with Windows-specific fixes and improvements.
 
+### Changes from upstream
 
+- **Fixed settings save failures** — Tauri invoke errors were silently falling back to a read-only REST API, causing saves to fail with cryptic HTML parse errors. Errors now propagate directly.
+- **Fixed console window flashing** — All subprocess calls during Claude binary discovery now use `CREATE_NO_WINDOW` to prevent terminal windows from briefly appearing on Windows.
+- **Fixed PATH-based binary validation** — `set_claude_binary_path` now resolves commands via `where`/`which` so bare PATH names like `claude.exe` are accepted.
+- **Improved error messages** — Settings save errors now display the specific failure reason instead of a generic message.
 
-https://github.com/user-attachments/assets/6bceea0f-60b6-4c3e-a745-b891de00b8d0
-
-
-
-> [!TIP]
-> **⭐ Star the repo and follow [@getAsterisk](https://x.com/getAsterisk) on X for early access to `asteria-swe-v0`**.
+---
 
 > [!NOTE]
 > This project is not affiliated with, endorsed by, or sponsored by Anthropic. Claude is a trademark of Anthropic, PBC. This is an independent developer project using Claude.
@@ -240,7 +232,7 @@ brew install pkg-config
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/getAsterisk/opcode.git
+   git clone https://github.com/KingRecycle/opcode-modified.git
    cd opcode
    ```
 
@@ -412,16 +404,11 @@ This project is licensed under the AGPL License - see the [LICENSE](LICENSE) fil
 
 <div align="center">
   <p>
-    <strong>Made with ❤️ by the <a href="https://asterisk.so/">Asterisk</a></strong>
+    Originally created by <a href="https://asterisk.so/">Asterisk</a> · Fork maintained by <a href="https://github.com/KingRecycle">KingRecycle</a>
   </p>
   <p>
-    <a href="https://github.com/getAsterisk/opcode/issues">Report Bug</a>
+    <a href="https://github.com/KingRecycle/opcode-modified/issues">Report Bug</a>
     ·
-    <a href="https://github.com/getAsterisk/opcode/issues">Request Feature</a>
+    <a href="https://github.com/KingRecycle/opcode-modified/issues">Request Feature</a>
   </p>
 </div>
-
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=getAsterisk/opcode&type=Date)](https://www.star-history.com/#getAsterisk/opcode&Date)
