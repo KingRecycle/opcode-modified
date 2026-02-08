@@ -1601,7 +1601,26 @@ pub async fn set_claude_binary_path(db: State<'_, AgentDb>, path: String) -> Res
     // Validate that the path exists and is executable
     let path_buf = std::path::PathBuf::from(&path);
     if !path_buf.exists() {
-        return Err(format!("File does not exist: {}", path));
+        // Try resolving via PATH (e.g. "claude.exe" -> full path)
+        let mut cmd = if cfg!(windows) {
+            std::process::Command::new("where")
+        } else {
+            std::process::Command::new("which")
+        };
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        let resolved = cmd.arg(&path).output();
+        match resolved {
+            Ok(output) if output.status.success() => {
+                // Found on PATH - that's good enough
+            }
+            _ => {
+                return Err(format!("File does not exist: {}", path));
+            }
+        }
     }
 
     // Check if it's executable (on Unix systems)

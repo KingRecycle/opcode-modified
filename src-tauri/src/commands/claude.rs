@@ -745,18 +745,32 @@ pub async fn save_system_prompt(content: String) -> Result<String, String> {
 /// Saves the Claude settings file
 #[tauri::command]
 pub async fn save_claude_settings(settings: serde_json::Value) -> Result<String, String> {
-    log::info!("Saving Claude settings");
+    log::info!("Saving Claude settings: {:?}", settings);
 
-    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let claude_dir = get_claude_dir().map_err(|e| {
+        let msg = format!("Failed to get claude dir: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
     let settings_path = claude_dir.join("settings.json");
+    log::info!("Settings path: {:?}", settings_path);
 
     // Pretty print the JSON with 2-space indentation
     let json_string = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Failed to serialize settings: {}", e);
+            log::error!("{}", msg);
+            msg
+        })?;
 
-    fs::write(&settings_path, json_string)
-        .map_err(|e| format!("Failed to write settings file: {}", e))?;
+    fs::write(&settings_path, &json_string)
+        .map_err(|e| {
+            let msg = format!("Failed to write settings file at {:?}: {}", settings_path, e);
+            log::error!("{}", msg);
+            msg
+        })?;
 
+    log::info!("Settings saved successfully");
     Ok("Settings saved successfully".to_string())
 }
 

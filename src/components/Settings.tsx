@@ -240,8 +240,9 @@ export const Settings: React.FC<SettingsProps> = ({
       setToast({ message: "Settings saved successfully!", type: "success" });
     } catch (err) {
       console.error("Failed to save settings:", err);
-      setError("Failed to save settings.");
-      setToast({ message: "Failed to save settings", type: "error" });
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setError(`Failed to save settings: ${errorMsg}`);
+      setToast({ message: `Failed to save settings: ${errorMsg}`, type: "error" });
     } finally {
       setSaving(false);
     }
