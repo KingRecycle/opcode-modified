@@ -28,6 +28,7 @@
 - **Model label on responses** — AI response bubbles now show which model was used under the Bot icon.
 - **Compact result stats** — The "Execution Complete" card is now a slim stats bar (cost, duration, turns, tokens) instead of duplicating the response text.
 - **Deduplicated system init** — "System Initialized" widget only appears once per conversation instead of on every message.
+- **Permission prompt support** — Default and Accept Edits permission modes now work via an MCP-based permission prompt pipeline. Write/modify operations show a dialog for user approval instead of being silently allowed or hanging.
 
 ---
 
