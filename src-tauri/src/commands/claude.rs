@@ -946,6 +946,135 @@ pub async fn load_session_history(
     Ok(messages)
 }
 
+/// Append permission-related CLI flags based on the selected mode.
+///
+/// When `mcp_config_path` is provided (for modes that need interactive
+/// permission prompts), the MCP flags are added so Claude Code routes
+/// permission questions through the OpCode permission-prompt MCP tool.
+fn append_permission_args(
+    args: &mut Vec<String>,
+    permission_mode: Option<&str>,
+    mcp_config_path: Option<&str>,
+) {
+    match permission_mode.unwrap_or("bypassPermissions") {
+        "bypassPermissions" => {
+            args.push("--dangerously-skip-permissions".to_string());
+        }
+        "plan" => {
+            // Plan mode has no interactive prompts, no MCP needed
+            args.push("--permission-mode".to_string());
+            args.push("plan".to_string());
+            args.push("--allow-dangerously-skip-permissions".to_string());
+        }
+        mode @ ("acceptEdits" | "default") => {
+            args.push("--permission-mode".to_string());
+            args.push(mode.to_string());
+            args.push("--allow-dangerously-skip-permissions".to_string());
+
+            if let Some(config_path) = mcp_config_path {
+                args.push("--mcp-config".to_string());
+                args.push(config_path.to_string());
+                args.push("--permission-prompt-tool".to_string());
+                args.push("mcp__opcode__permission_prompt".to_string());
+            }
+        }
+        _ => {
+            // Unknown mode — fall back to bypass for backwards compatibility
+            args.push("--dangerously-skip-permissions".to_string());
+        }
+    }
+}
+
+/// Respond to a permission prompt from the frontend.
+#[tauri::command]
+pub async fn respond_permission_prompt(
+    app: AppHandle,
+    session_id: String,
+    prompt_id: String,
+    behavior: String,
+    input: Option<serde_json::Value>,
+) -> Result<(), String> {
+    log::info!(
+        "Responding to permission prompt '{}' for session '{}': {}",
+        prompt_id,
+        session_id,
+        behavior
+    );
+    let registry = app.state::<crate::permission_prompt::PermissionServerRegistry>();
+
+    let response = if behavior == "allow" {
+        crate::permission_prompt::PermissionResponse {
+            behavior,
+            updated_input: input,
+            message: None,
+        }
+    } else {
+        crate::permission_prompt::PermissionResponse {
+            behavior,
+            updated_input: None,
+            message: Some("Denied by user".to_string()),
+        }
+    };
+
+    crate::permission_prompt::resolve_prompt(
+        &session_id,
+        &prompt_id,
+        response,
+        &registry,
+    )
+    .await
+}
+
+/// Holds cleanup info for the permission MCP server so `spawn_claude_process`
+/// can re-key and clean up after the process exits.
+struct PermissionCleanup {
+    placeholder_id: String,
+    config_path: std::path::PathBuf,
+    script_path: std::path::PathBuf,
+}
+
+/// Start a permission MCP server if the permission mode requires it.
+/// Returns `(mcp_config_path_string, PermissionCleanup)` or `None`.
+async fn maybe_start_permission_server(
+    app: &AppHandle,
+    permission_mode: Option<&str>,
+) -> Result<Option<(String, PermissionCleanup)>, String> {
+    match permission_mode {
+        Some("acceptEdits") | Some("default") => {
+            let node_path = crate::permission_prompt::find_node()?;
+            let registry = app.state::<crate::permission_prompt::PermissionServerRegistry>();
+
+            let placeholder = format!("pending-{}", uuid::Uuid::new_v4());
+            let port =
+                crate::permission_prompt::start_server(app.clone(), &placeholder, &registry)
+                    .await?;
+
+            let (config_path, script_path) =
+                crate::permission_prompt::generate_mcp_files(port, &placeholder, &node_path)?;
+
+            // Store paths so cleanup works
+            crate::permission_prompt::set_mcp_paths(
+                &placeholder,
+                config_path.clone(),
+                script_path.clone(),
+                &registry,
+            )
+            .await;
+
+            let config_str = config_path.to_string_lossy().to_string();
+            Ok(Some((
+                config_str,
+                PermissionCleanup {
+                    placeholder_id: placeholder,
+                    config_path,
+                    script_path,
+                },
+            )))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Execute a new interactive Claude Code session with streaming output
 #[tauri::command]
 pub async fn execute_claude_code(
@@ -953,6 +1082,7 @@ pub async fn execute_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
     log::info!(
         "Starting new Claude Code session in: {} with model: {}",
@@ -962,7 +1092,10 @@ pub async fn execute_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let perm_info = maybe_start_permission_server(&app, permission_mode.as_deref()).await?;
+    let mcp_config_str = perm_info.as_ref().map(|(s, _)| s.as_str());
+
+    let mut args = vec![
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -970,11 +1103,12 @@ pub async fn execute_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    append_permission_args(&mut args, permission_mode.as_deref(), mcp_config_str);
 
     let cmd = create_system_command(&claude_path, args, &project_path);
-    spawn_claude_process(app, cmd, prompt, model, project_path).await
+    let cleanup = perm_info.map(|(_, c)| c);
+    spawn_claude_process(app, cmd, prompt, model, project_path, cleanup).await
 }
 
 /// Continue an existing Claude Code conversation with streaming output
@@ -984,6 +1118,7 @@ pub async fn continue_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
     log::info!(
         "Continuing Claude Code conversation in: {} with model: {}",
@@ -993,8 +1128,11 @@ pub async fn continue_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
-        "-c".to_string(), // Continue flag
+    let perm_info = maybe_start_permission_server(&app, permission_mode.as_deref()).await?;
+    let mcp_config_str = perm_info.as_ref().map(|(s, _)| s.as_str());
+
+    let mut args = vec![
+        "-c".to_string(),
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -1002,11 +1140,12 @@ pub async fn continue_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    append_permission_args(&mut args, permission_mode.as_deref(), mcp_config_str);
 
     let cmd = create_system_command(&claude_path, args, &project_path);
-    spawn_claude_process(app, cmd, prompt, model, project_path).await
+    let cleanup = perm_info.map(|(_, c)| c);
+    spawn_claude_process(app, cmd, prompt, model, project_path, cleanup).await
 }
 
 /// Resume an existing Claude Code session by ID with streaming output
@@ -1017,6 +1156,7 @@ pub async fn resume_claude_code(
     session_id: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
     log::info!(
         "Resuming Claude Code session: {} in: {} with model: {}",
@@ -1027,7 +1167,10 @@ pub async fn resume_claude_code(
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let perm_info = maybe_start_permission_server(&app, permission_mode.as_deref()).await?;
+    let mcp_config_str = perm_info.as_ref().map(|(s, _)| s.as_str());
+
+    let mut args = vec![
         "--resume".to_string(),
         session_id.clone(),
         "-p".to_string(),
@@ -1037,11 +1180,12 @@ pub async fn resume_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    append_permission_args(&mut args, permission_mode.as_deref(), mcp_config_str);
 
     let cmd = create_system_command(&claude_path, args, &project_path);
-    spawn_claude_process(app, cmd, prompt, model, project_path).await
+    let cleanup = perm_info.map(|(_, c)| c);
+    spawn_claude_process(app, cmd, prompt, model, project_path, cleanup).await
 }
 
 /// Cancel the currently running Claude Code execution
@@ -1157,6 +1301,12 @@ pub async fn cancel_claude_execution(
         log::warn!("No active Claude process found to cancel");
     }
 
+    // Stop the permission server for this session (if any)
+    if let Some(sid) = &session_id {
+        let perm_registry = app.state::<crate::permission_prompt::PermissionServerRegistry>();
+        crate::permission_prompt::stop_server(sid, &perm_registry).await;
+    }
+
     // Always emit cancellation events for UI consistency
     if let Some(sid) = session_id {
         let _ = app.emit(&format!("claude-cancelled:{}", sid), true);
@@ -1207,6 +1357,7 @@ async fn spawn_claude_process(
     prompt: String,
     model: String,
     project_path: String,
+    permission_cleanup: Option<PermissionCleanup>,
 ) -> Result<(), String> {
     use std::sync::Mutex;
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -1244,6 +1395,11 @@ async fn spawn_claude_process(
         *current_process = Some(child);
     }
 
+    // Permission cleanup: extract the placeholder ID for re-keying
+    let perm_placeholder_id: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(
+        permission_cleanup.as_ref().map(|c| c.placeholder_id.clone()),
+    ));
+
     // Spawn tasks to read stdout and stderr
     let app_handle = app.clone();
     let session_id_holder_clone = session_id_holder.clone();
@@ -1253,6 +1409,7 @@ async fn spawn_claude_process(
     let project_path_clone = project_path.clone();
     let prompt_clone = prompt.clone();
     let model_clone = model.clone();
+    let perm_placeholder_clone = perm_placeholder_id.clone();
     let stdout_task = tokio::spawn(async move {
         let mut lines = stdout_reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
@@ -1262,10 +1419,30 @@ async fn spawn_claude_process(
             if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
                 if msg["type"] == "system" && msg["subtype"] == "init" {
                     if let Some(claude_session_id) = msg["session_id"].as_str() {
-                        let mut session_id_guard = session_id_holder_clone.lock().unwrap();
-                        if session_id_guard.is_none() {
-                            *session_id_guard = Some(claude_session_id.to_string());
+                        // Check and set session ID using a scoped lock (drop guard before await)
+                        let is_new_session = {
+                            let mut session_id_guard = session_id_holder_clone.lock().unwrap();
+                            if session_id_guard.is_none() {
+                                *session_id_guard = Some(claude_session_id.to_string());
+                                true
+                            } else {
+                                false
+                            }
+                        }; // guard dropped here
+
+                        if is_new_session {
                             log::info!("Extracted Claude session ID: {}", claude_session_id);
+
+                            // Re-key permission server from placeholder to real session ID
+                            let placeholder = perm_placeholder_clone.lock().unwrap().take();
+                            if let Some(placeholder) = placeholder {
+                                let perm_reg = app_handle.state::<crate::permission_prompt::PermissionServerRegistry>();
+                                crate::permission_prompt::rekey_server(
+                                    &placeholder,
+                                    claude_session_id,
+                                    &perm_reg,
+                                ).await;
+                            }
 
                             // Now register with ProcessRegistry using Claude's session ID
                             match registry_clone.register_claude_session(
@@ -1360,6 +1537,20 @@ async fn spawn_claude_process(
         // Unregister from ProcessRegistry if we have a run_id
         if let Some(run_id) = *run_id_holder_clone2.lock().unwrap() {
             let _ = registry_clone2.unregister_process(run_id);
+        }
+
+        // Stop permission server and clean up temp files
+        // Clone the session_id out of the MutexGuard before awaiting
+        let session_id_for_cleanup = session_id_holder_clone3.lock().unwrap().clone();
+        if let Some(ref session_id) = session_id_for_cleanup {
+            let perm_reg = app_handle_wait.state::<crate::permission_prompt::PermissionServerRegistry>();
+            crate::permission_prompt::stop_server(session_id, &perm_reg).await;
+        }
+        // Also try cleaning up with the placeholder ID in case re-key didn't happen
+        let placeholder_for_cleanup = perm_placeholder_id.lock().unwrap().clone();
+        if let Some(ref placeholder) = placeholder_for_cleanup {
+            let perm_reg = app_handle_wait.state::<crate::permission_prompt::PermissionServerRegistry>();
+            crate::permission_prompt::stop_server(placeholder, &perm_reg).await;
         }
 
         // Clear the process from state

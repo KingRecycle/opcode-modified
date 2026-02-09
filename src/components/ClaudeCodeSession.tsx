@@ -32,6 +32,7 @@ import type { ClaudeStreamMessage } from "./AgentExecution";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
+import { PermissionPromptDialog } from "./PermissionPromptDialog";
 
 interface ClaudeCodeSessionProps {
   /**
@@ -94,7 +95,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
-  
+
+  // Permission prompt state
+  const [permissionPrompt, setPermissionPrompt] = useState<{
+    promptId: string;
+    sessionId: string;
+    toolName: string;
+    input: Record<string, any>;
+  } | null>(null);
+
   // Queued prompts state
   const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
   
@@ -458,8 +467,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Project path selection handled by parent tab controls
 
-  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus") => {
-    console.log('[ClaudeCodeSession] handleSendPrompt called with:', { prompt, model, projectPath, claudeSessionId, effectiveSession });
+  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus", permissionMode?: string) => {
     
     if (!projectPath) {
       setError("Please select a project directory first");
@@ -531,9 +539,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             processComplete(evt.payload);
           });
 
+          // Session-scoped permission prompt listener
+          const specificPermissionUnlisten = await listen(`permission-prompt:${sid}`, (evt: any) => {
+            const payload = evt.payload as {
+              prompt_id: string;
+              session_id: string;
+              tool_name: string;
+              input: Record<string, any>;
+            };
+            console.log('[ClaudeCodeSession] Permission prompt (scoped):', payload.prompt_id, payload.tool_name);
+            setPermissionPrompt({
+              promptId: payload.prompt_id,
+              sessionId: payload.session_id,
+              toolName: payload.tool_name,
+              input: payload.input,
+            });
+          });
+
           // Replace existing unlisten refs with these new ones (after cleaning up)
           unlistenRefs.current.forEach((u) => u());
-          unlistenRefs.current = [specificOutputUnlisten, specificErrorUnlisten, specificCompleteUnlisten];
+          unlistenRefs.current = [specificOutputUnlisten, specificErrorUnlisten, specificCompleteUnlisten, specificPermissionUnlisten];
         };
 
         // Generic listeners (catch-all)
@@ -778,8 +803,25 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           processComplete(evt.payload);
         });
 
+        // Permission prompt listener (generic — works before session ID is known)
+        const permissionPromptUnlisten = await listen('permission-prompt', (evt: any) => {
+          const payload = evt.payload as {
+            prompt_id: string;
+            session_id: string;
+            tool_name: string;
+            input: Record<string, any>;
+          };
+          console.log('[ClaudeCodeSession] Permission prompt received:', payload.prompt_id, payload.tool_name);
+          setPermissionPrompt({
+            promptId: payload.prompt_id,
+            sessionId: payload.session_id,
+            toolName: payload.tool_name,
+            input: payload.input,
+          });
+        });
+
         // Store the generic unlisteners for now; they may be replaced later.
-        unlistenRefs.current = [genericOutputUnlisten, genericErrorUnlisten, genericCompleteUnlisten];
+        unlistenRefs.current = [genericOutputUnlisten, genericErrorUnlisten, genericCompleteUnlisten, permissionPromptUnlisten];
 
         // --------------------------------------------------------------------
         // 2️⃣  Auto-checkpoint logic moved after listener setup (unchanged)
@@ -844,13 +886,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           console.log('[ClaudeCodeSession] Resuming session:', effectiveSession.id);
           trackEvent.sessionResumed(effectiveSession.id);
           trackEvent.modelSelected(model);
-          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
+          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model, permissionMode);
         } else {
           console.log('[ClaudeCodeSession] Starting new session');
           setIsFirstPrompt(false);
           trackEvent.sessionCreated(model, 'prompt_input');
           trackEvent.modelSelected(model);
-          await api.executeClaudeCode(projectPath, prompt, model);
+          await api.executeClaudeCode(projectPath, prompt, model, permissionMode);
         }
       }
     } catch (err) {
@@ -1025,8 +1067,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       isListeningRef.current = false;
       setError(null);
       
-      // Clear queued prompts
+      // Clear queued prompts and permission dialog
       setQueuedPrompts([]);
+      setPermissionPrompt(null);
       
       // Add a message indicating the session was cancelled
       const cancelMessage: ClaudeStreamMessage = {
@@ -1059,6 +1102,35 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       isListeningRef.current = false;
       setError(null);
     }
+  };
+
+  const handlePermissionAllow = async () => {
+    if (!permissionPrompt) return;
+    try {
+      await api.respondPermissionPrompt(
+        permissionPrompt.sessionId,
+        permissionPrompt.promptId,
+        "allow",
+        permissionPrompt.input,
+      );
+    } catch (err) {
+      console.error("Failed to send permission response:", err);
+    }
+    setPermissionPrompt(null);
+  };
+
+  const handlePermissionDeny = async () => {
+    if (!permissionPrompt) return;
+    try {
+      await api.respondPermissionPrompt(
+        permissionPrompt.sessionId,
+        permissionPrompt.promptId,
+        "deny",
+      );
+    } catch (err) {
+      console.error("Failed to send permission response:", err);
+    }
+    setPermissionPrompt(null);
   };
 
   const handleFork = (checkpointId: string) => {
@@ -1646,6 +1718,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Permission Prompt Dialog */}
+      <PermissionPromptDialog
+        open={permissionPrompt !== null}
+        toolName={permissionPrompt?.toolName ?? ""}
+        input={permissionPrompt?.input ?? {}}
+        onAllow={handlePermissionAllow}
+        onDeny={handlePermissionDeny}
+      />
 
       {/* Fork Dialog */}
       <Dialog open={showForkDialog} onOpenChange={setShowForkDialog}>

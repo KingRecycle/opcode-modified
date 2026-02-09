@@ -12,10 +12,10 @@ import {
   Lightbulb,
   Cpu,
   Rocket,
-  
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MODEL_INFO } from "@/lib/models";
+import { MODEL_INFO, PERMISSION_MODES, type PermissionMode } from "@/lib/models";
 import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,7 +31,7 @@ interface FloatingPromptInputProps {
   /**
    * Callback when prompt is sent
    */
-  onSend: (prompt: string, model: "sonnet" | "opus") => void;
+  onSend: (prompt: string, model: "sonnet" | "opus", permissionMode?: string) => void;
   /**
    * Whether the input is loading
    */
@@ -242,9 +242,25 @@ const FloatingPromptInputInner = (
     setSelectedThinkingModeState(mode);
     try { localStorage.setItem("opcode-thinking-mode", mode); } catch { /* noop */ }
   };
+  const [selectedPermissionMode, setSelectedPermissionModeState] = useState<PermissionMode>(() => {
+    try {
+      const saved = localStorage.getItem("opcode-permission-mode");
+      const valid: PermissionMode[] = ["plan", "acceptEdits", "default", "bypassPermissions"];
+      return valid.includes(saved as PermissionMode) ? (saved as PermissionMode) : "bypassPermissions";
+    } catch {
+      return "bypassPermissions";
+    }
+  });
+
+  const setSelectedPermissionMode = (mode: PermissionMode) => {
+    setSelectedPermissionModeState(mode);
+    try { localStorage.setItem("opcode-permission-mode", mode); } catch { /* noop */ }
+  };
+
   const [isExpanded, setIsExpanded] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [thinkingModePickerOpen, setThinkingModePickerOpen] = useState(false);
+  const [permissionModePickerOpen, setPermissionModePickerOpen] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [filePickerQuery, setFilePickerQuery] = useState("");
   const [showSlashCommandPicker, setShowSlashCommandPicker] = useState(false);
@@ -721,7 +737,7 @@ const FloatingPromptInputInner = (
         finalPrompt = `${finalPrompt}.\n\n${thinkingMode.phrase}.`;
       }
 
-      onSend(finalPrompt, selectedModel);
+      onSend(finalPrompt, selectedModel, selectedPermissionMode);
       setPrompt("");
       setEmbeddedImages([]);
       setTextareaHeight(48); // Reset height after sending
@@ -1095,8 +1111,71 @@ const FloatingPromptInputInner = (
 
           <div className="p-3">
             <div className="flex items-end gap-2">
-              {/* Model & Thinking Mode Selectors - Left side, fixed at bottom */}
-              <div className="flex items-center gap-1 shrink-0 mb-1">
+              {/* Mode, Model & Thinking Selectors - Left side, stacked */}
+              <div className="flex flex-col gap-1 shrink-0 mb-1">
+                {/* Permission Mode Selector */}
+                <div className="flex items-center">
+                  <Popover
+                    trigger={
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <motion.div
+                            whileTap={{ scale: 0.97 }}
+                            transition={{ duration: 0.15 }}
+                          >
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={disabled}
+                              className="h-7 px-2 hover:bg-accent/50 gap-1"
+                            >
+                              <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-xs font-medium opacity-70">
+                                {PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.name}
+                              </span>
+                              <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
+                            </Button>
+                          </motion.div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          <p className="text-xs font-medium">Mode: {PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.name}</p>
+                          <p className="text-xs text-muted-foreground">{PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.description}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    }
+                    content={
+                      <div className="w-[280px] p-1">
+                        {PERMISSION_MODES.map((mode) => (
+                          <button
+                            key={mode.id}
+                            onClick={() => {
+                              setSelectedPermissionMode(mode.id);
+                              setPermissionModePickerOpen(false);
+                            }}
+                            className={cn(
+                              "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+                              "hover:bg-accent",
+                              selectedPermissionMode === mode.id && "bg-accent"
+                            )}
+                          >
+                            <Shield className={cn("h-4 w-4 mt-0.5", selectedPermissionMode === mode.id ? "text-primary" : "text-muted-foreground")} />
+                            <div className="flex-1 space-y-1">
+                              <div className="font-medium text-sm">{mode.name}</div>
+                              <div className="text-xs text-muted-foreground">{mode.description}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    }
+                    open={permissionModePickerOpen}
+                    onOpenChange={setPermissionModePickerOpen}
+                    align="start"
+                    side="top"
+                  />
+                </div>
+
+                {/* Model & Thinking Mode Selectors */}
+                <div className="flex items-center gap-1">
                 <Popover
                   trigger={
                     <Tooltip>
@@ -1229,7 +1308,7 @@ const FloatingPromptInputInner = (
                 align="start"
                 side="top"
               />
-
+                </div>
               </div>
 
               {/* Prompt Input - Center */}

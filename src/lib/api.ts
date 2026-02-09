@@ -1028,22 +1028,22 @@ export const api = {
   /**
    * Executes a new interactive Claude Code session with streaming output
    */
-  async executeClaudeCode(projectPath: string, prompt: string, model: string): Promise<void> {
-    return apiCall("execute_claude_code", { projectPath, prompt, model });
+  async executeClaudeCode(projectPath: string, prompt: string, model: string, permissionMode?: string): Promise<void> {
+    return apiCall("execute_claude_code", { projectPath, prompt, model, permissionMode: permissionMode || "bypassPermissions" });
   },
 
   /**
    * Continues an existing Claude Code conversation with streaming output
    */
-  async continueClaudeCode(projectPath: string, prompt: string, model: string): Promise<void> {
-    return apiCall("continue_claude_code", { projectPath, prompt, model });
+  async continueClaudeCode(projectPath: string, prompt: string, model: string, permissionMode?: string): Promise<void> {
+    return apiCall("continue_claude_code", { projectPath, prompt, model, permissionMode: permissionMode || "bypassPermissions" });
   },
 
   /**
    * Resumes an existing Claude Code session by ID with streaming output
    */
-  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string): Promise<void> {
-    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model });
+  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string, permissionMode?: string): Promise<void> {
+    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model, permissionMode: permissionMode || "bypassPermissions" });
   },
 
   /**
@@ -1052,6 +1052,21 @@ export const api = {
    */
   async cancelClaudeExecution(sessionId?: string): Promise<void> {
     return apiCall("cancel_claude_execution", { sessionId });
+  },
+
+  /**
+   * Responds to a permission prompt from Claude Code
+   * @param sessionId - The session ID the prompt belongs to
+   * @param promptId - The unique prompt ID
+   * @param behavior - "allow" or "deny"
+   */
+  async respondPermissionPrompt(
+    sessionId: string,
+    promptId: string,
+    behavior: "allow" | "deny",
+    input?: Record<string, any>,
+  ): Promise<void> {
+    return apiCall("respond_permission_prompt", { sessionId, promptId, behavior, input });
   },
 
   /**
