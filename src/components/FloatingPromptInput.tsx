@@ -60,6 +60,10 @@ interface FloatingPromptInputProps {
    * Extra menu items to display in the prompt bar
    */
   extraMenuItems?: React.ReactNode;
+  /**
+   * Callback when the input bar height changes (for dynamic padding)
+   */
+  onHeightChange?: ( height: number ) => void;
 }
 
 export interface FloatingPromptInputRef {
@@ -211,6 +215,7 @@ const FloatingPromptInputInner = (
     className,
     onCancel,
     extraMenuItems,
+    onHeightChange,
   }: FloatingPromptInputProps,
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
@@ -274,6 +279,26 @@ const FloatingPromptInputInner = (
   const unlistenDragDropRef = useRef<(() => void) | null>(null);
   const [textareaHeight, setTextareaHeight] = useState<number>(48);
   const isIMEComposingRef = useRef(false);
+  const inputBarRef = useRef<HTMLDivElement>(null);
+
+  // Report height changes to parent for dynamic scroll padding
+  useEffect(() => {
+    if ( !onHeightChange || !inputBarRef.current ) return;
+
+    let lastHeight = 0;
+    const observer = new ResizeObserver(() => {
+      if ( inputBarRef.current ) {
+        const h = inputBarRef.current.offsetHeight;
+        if ( h !== lastHeight ) {
+          lastHeight = h;
+          onHeightChange( h );
+        }
+      }
+    });
+
+    observer.observe( inputBarRef.current );
+    return () => observer.disconnect();
+  }, [onHeightChange]);
 
   // Expose a method to add images programmatically
   React.useImperativeHandle(
@@ -1089,6 +1114,7 @@ const FloatingPromptInputInner = (
 
       {/* Fixed Position Input Bar */}
       <div
+        ref={inputBarRef}
         className={cn(
           "fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-sm border-t border-border shadow-lg",
           dragActive && "ring-2 ring-primary ring-offset-2",

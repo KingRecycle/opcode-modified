@@ -959,6 +959,15 @@ fn append_permission_args(
     match permission_mode.unwrap_or("bypassPermissions") {
         "bypassPermissions" => {
             args.push("--dangerously-skip-permissions".to_string());
+            // Even in bypass mode, attach the MCP config so that
+            // AskUserQuestion prompts are routed through the permission
+            // dialog instead of being silently auto-approved.
+            if let Some(config_path) = mcp_config_path {
+                args.push("--mcp-config".to_string());
+                args.push(config_path.to_string());
+                args.push("--permission-prompt-tool".to_string());
+                args.push("mcp__opcode__permission_prompt".to_string());
+            }
         }
         "plan" => {
             // Plan mode has no interactive prompts, no MCP needed
@@ -981,6 +990,12 @@ fn append_permission_args(
         _ => {
             // Unknown mode — fall back to bypass for backwards compatibility
             args.push("--dangerously-skip-permissions".to_string());
+            if let Some(config_path) = mcp_config_path {
+                args.push("--mcp-config".to_string());
+                args.push(config_path.to_string());
+                args.push("--permission-prompt-tool".to_string());
+                args.push("mcp__opcode__permission_prompt".to_string());
+            }
         }
     }
 }
@@ -1033,14 +1048,20 @@ struct PermissionCleanup {
     script_path: std::path::PathBuf,
 }
 
-/// Start a permission MCP server if the permission mode requires it.
+/// Start a permission MCP server for the session.
+/// The server is needed for all modes except `plan` because even
+/// `bypassPermissions` needs to intercept `AskUserQuestion` prompts.
 /// Returns `(mcp_config_path_string, PermissionCleanup)` or `None`.
 async fn maybe_start_permission_server(
     app: &AppHandle,
     permission_mode: Option<&str>,
 ) -> Result<Option<(String, PermissionCleanup)>, String> {
     match permission_mode {
-        Some("acceptEdits") | Some("default") => {
+        // Plan mode is read-only with no interactive prompts
+        Some("plan") => Ok(None),
+        // All other modes (including bypassPermissions and default/None) need
+        // the MCP server so AskUserQuestion can route through it.
+        _ => {
             let node_path = crate::permission_prompt::find_node()?;
             let registry = app.state::<crate::permission_prompt::PermissionServerRegistry>();
 
@@ -1071,7 +1092,6 @@ async fn maybe_start_permission_server(
                 },
             )))
         }
-        _ => Ok(None),
     }
 }
 

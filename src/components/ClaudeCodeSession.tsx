@@ -126,6 +126,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const isListeningRef = useRef(false);
   const sessionStartTime = useRef<number>(Date.now());
   const isIMEComposingRef = useRef(false);
+  const isNearBottomRef = useRef(true);
+  const [inputBarHeight, setInputBarHeight] = useState(130);
   
   // Session metrics state for enhanced analytics
   const sessionMetrics = useRef({
@@ -214,8 +216,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     if (toolUse) {
                       const toolName = toolUse.name?.toLowerCase();
                       const toolsWithWidgets = [
-                        'task', 'edit', 'multiedit', 'todowrite', 'ls', 'read', 
-                        'glob', 'bash', 'write', 'grep'
+                        'task', 'edit', 'multiedit', 'todowrite', 'ls', 'read',
+                        'glob', 'bash', 'write', 'grep', 'askuserquestion'
                       ];
                       if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
                         willBeSkipped = true;
@@ -283,27 +285,32 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     onStreamingChange?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId, onStreamingChange]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Track whether user is near the bottom of the scroll container
   useEffect(() => {
-    if (displayableMessages.length > 0) {
-      // Use a more precise scrolling method to ensure content is fully visible
-      setTimeout(() => {
-        const scrollElement = parentRef.current;
-        if (scrollElement) {
-          // First, scroll using virtualizer to get close to the bottom
-          rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
+    const scrollElement = parentRef.current;
+    if ( !scrollElement ) return;
 
-          // Then use direct scroll to ensure we reach the absolute bottom
-          requestAnimationFrame(() => {
-            scrollElement.scrollTo({
-              top: scrollElement.scrollHeight,
-              behavior: 'smooth'
-            });
-          });
-        }
-      }, 50);
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150;
+    };
+
+    scrollElement.addEventListener( 'scroll', handleScroll, { passive: true } );
+    return () => scrollElement.removeEventListener( 'scroll', handleScroll );
+  }, []);
+
+  // Auto-scroll to bottom when new messages arrive, only if user is near bottom
+  useEffect(() => {
+    if ( displayableMessages.length > 0 && isNearBottomRef.current ) {
+      requestAnimationFrame(() => {
+        rowVirtualizer.scrollToIndex( displayableMessages.length - 1, {
+          align: 'end',
+          behavior: 'smooth',
+        });
+      });
     }
-  }, [displayableMessages.length, rowVirtualizer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayableMessages.length]);
 
   // Calculate total tokens from messages
   useEffect(() => {
@@ -350,20 +357,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       // After loading history, we're continuing a conversation
       setIsFirstPrompt(false);
       
-      // Scroll to bottom after loading history
+      // Force-scroll to bottom after loading history (always, regardless of scroll position)
       setTimeout(() => {
-        if (loadedMessages.length > 0) {
-          const scrollElement = parentRef.current;
-          if (scrollElement) {
-            // Use the same improved scrolling method
-            rowVirtualizer.scrollToIndex(loadedMessages.length - 1, { align: 'end', behavior: 'auto' });
-            requestAnimationFrame(() => {
-              scrollElement.scrollTo({
-                top: scrollElement.scrollHeight,
-                behavior: 'auto'
-              });
-            });
-          }
+        if ( loadedMessages.length > 0 ) {
+          isNearBottomRef.current = true;
+          rowVirtualizer.scrollToIndex( loadedMessages.length - 1, {
+            align: 'end',
+            behavior: 'auto',
+          });
         }
       }, 100);
     } catch (err) {
@@ -1104,14 +1105,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
-  const handlePermissionAllow = async () => {
+  const handlePermissionAllow = async ( updatedInput?: Record<string, any> ) => {
     if (!permissionPrompt) return;
     try {
       await api.respondPermissionPrompt(
         permissionPrompt.sessionId,
         permissionPrompt.promptId,
         "allow",
-        permissionPrompt.input,
+        updatedInput ?? permissionPrompt.input,
       );
     } catch (err) {
       console.error("Failed to send permission response:", err);
@@ -1264,9 +1265,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const messagesList = (
     <div
       ref={parentRef}
-      className="flex-1 overflow-y-auto relative pb-20"
+      className="flex-1 overflow-y-auto relative"
       style={{
-        contain: 'strict',
+        paddingBottom: `${inputBarHeight + 16}px`,
       }}
     >
       <div
@@ -1293,8 +1294,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   top: virtualItem.start,
                 }}
               >
-                <StreamMessage 
-                  message={message} 
+                <StreamMessage
+                  message={message}
                   streamMessages={messages}
                   onLinkDetected={handleLinkDetected}
                 />
@@ -1310,7 +1311,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.15 }}
-          className="flex items-center justify-center py-4 mb-20"
+          className="flex items-center justify-center py-4"
         >
           <div className="rotating-symbol text-primary" />
         </motion.div>
@@ -1322,7 +1323,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.15 }}
-          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive mb-20 w-full max-w-6xl mx-auto"
+          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive w-full max-w-6xl mx-auto"
         >
           {error}
         </motion.div>
@@ -1419,7 +1420,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
+                className="fixed left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
+                style={{ bottom: `${inputBarHeight + 8}px` }}
               >
                 <div className="bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
@@ -1482,7 +1484,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ delay: 0.5 }}
-              className="fixed bottom-32 right-6 z-50"
+              className="fixed right-6 z-50"
+              style={{ bottom: `${inputBarHeight + 12}px` }}
             >
               <div className="flex items-center bg-background/95 backdrop-blur-md border rounded-full shadow-lg overflow-hidden">
                 <TooltipSimple content="Scroll to top" side="top">
@@ -1532,21 +1535,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        // Use the improved scrolling method for manual scroll to bottom
-                        if (displayableMessages.length > 0) {
-                          const scrollElement = parentRef.current;
-                          if (scrollElement) {
-                            // First, scroll using virtualizer to get close to the bottom
-                            rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-
-                            // Then use direct scroll to ensure we reach the absolute bottom
-                            requestAnimationFrame(() => {
-                              scrollElement.scrollTo({
-                                top: scrollElement.scrollHeight,
-                                behavior: 'smooth'
-                              });
-                            });
-                          }
+                        if ( displayableMessages.length > 0 ) {
+                          isNearBottomRef.current = true;
+                          rowVirtualizer.scrollToIndex( displayableMessages.length - 1, {
+                            align: 'end',
+                            behavior: 'smooth',
+                          });
                         }
                       }}
                       className="px-3 py-2 hover:bg-accent rounded-none"
@@ -1559,81 +1553,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
-          <div className={cn(
-            "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
-            showTimeline && "sm:right-96"
-          )}>
-            <FloatingPromptInput
-              ref={floatingPromptRef}
-              onSend={handleSendPrompt}
-              onCancel={handleCancelExecution}
-              isLoading={isLoading}
-              disabled={!projectPath}
-              projectPath={projectPath}
-              extraMenuItems={
-                <>
-                  {effectiveSession && (
-                    <TooltipSimple content="Session Timeline" side="top">
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setShowTimeline(!showTimeline)}
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        >
-                          <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
-                  )}
-                  {messages.length > 0 && (
-                    <Popover
-                      trigger={
-                        <TooltipSimple content="Copy conversation" side="top">
-                          <motion.div
-                            whileTap={{ scale: 0.97 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                            </Button>
-                          </motion.div>
-                        </TooltipSimple>
-                      }
-                      content={
-                        <div className="w-44 p-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleCopyAsMarkdown}
-                            className="w-full justify-start text-xs"
-                          >
-                            Copy as Markdown
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleCopyAsJsonl}
-                            className="w-full justify-start text-xs"
-                          >
-                            Copy as JSONL
-                          </Button>
-                        </div>
-                      }
-                      open={copyPopoverOpen}
-                      onOpenChange={setCopyPopoverOpen}
-                      side="top"
-                      align="end"
-                    />
-                  )}
-                  <TooltipSimple content="Checkpoint Settings" side="top">
+          <FloatingPromptInput
+            ref={floatingPromptRef}
+            onSend={handleSendPrompt}
+            onCancel={handleCancelExecution}
+            isLoading={isLoading}
+            disabled={!projectPath}
+            projectPath={projectPath}
+            onHeightChange={setInputBarHeight}
+            className={cn(
+              "transition-all duration-300",
+              showTimeline && "sm:right-96"
+            )}
+            extraMenuItems={
+              <>
+                {effectiveSession && (
+                  <TooltipSimple content="Session Timeline" side="top">
                     <motion.div
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.15 }}
@@ -1641,23 +1576,85 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setShowTimeline(!showTimeline)}
+                        className="h-9 w-9 text-muted-foreground hover:text-foreground"
                       >
-                        <Wrench className={cn("h-3.5 w-3.5", showSettings && "text-primary")} />
+                        <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
                       </Button>
                     </motion.div>
                   </TooltipSimple>
-                </>
-              }
-            />
-          </div>
+                )}
+                {messages.length > 0 && (
+                  <Popover
+                    trigger={
+                      <TooltipSimple content="Copy conversation" side="top">
+                        <motion.div
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </motion.div>
+                      </TooltipSimple>
+                    }
+                    content={
+                      <div className="w-44 p-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyAsMarkdown}
+                          className="w-full justify-start text-xs"
+                        >
+                          Copy as Markdown
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyAsJsonl}
+                          className="w-full justify-start text-xs"
+                        >
+                          Copy as JSONL
+                        </Button>
+                      </div>
+                    }
+                    open={copyPopoverOpen}
+                    onOpenChange={setCopyPopoverOpen}
+                    side="top"
+                    align="end"
+                  />
+                )}
+                <TooltipSimple content="Checkpoint Settings" side="top">
+                  <motion.div
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowSettings(!showSettings)}
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    >
+                      <Wrench className={cn("h-3.5 w-3.5", showSettings && "text-primary")} />
+                    </Button>
+                  </motion.div>
+                </TooltipSimple>
+              </>
+            }
+          />
 
-          {/* Token Counter - positioned under the Send button */}
+          {/* Token Counter - positioned just above the input bar */}
           {totalTokens > 0 && (
-            <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none">
+            <div
+              className="fixed left-0 right-0 z-30 pointer-events-none"
+              style={{ bottom: `${inputBarHeight + 4}px` }}
+            >
               <div className="max-w-6xl mx-auto">
-                <div className="flex justify-end px-4 pb-2">
+                <div className="flex justify-end px-4 pb-1">
                   <motion.div
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}

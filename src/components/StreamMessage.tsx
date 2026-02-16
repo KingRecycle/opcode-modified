@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
-import { 
-  Terminal, 
-  User, 
-  Bot, 
-  AlertCircle, 
-  CheckCircle2
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  Terminal,
+  User,
+  Bot,
+  AlertCircle,
+  CheckCircle2,
+  Wrench
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,8 @@ import {
   LSResultWidget,
   ThinkingWidget,
   WebSearchWidget,
-  WebFetchWidget
+  WebFetchWidget,
+  AskUserQuestionWidget
 } from "./ToolWidgets";
 
 interface StreamMessageProps {
@@ -47,12 +49,13 @@ interface StreamMessageProps {
   className?: string;
   streamMessages: ClaudeStreamMessage[];
   onLinkDetected?: (url: string) => void;
+  onSendPrompt?: ( prompt: string ) => void;
 }
 
 /**
  * Component to render a single Claude Code stream message
  */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected }) => {
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected, onSendPrompt }) => {
   // State to track tool results mapped by tool call ID
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
   
@@ -73,7 +76,23 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
     }
     return null;
   }, [streamMessages]);
-  
+
+  // Find the last AskUserQuestion tool_use id to determine interactivity
+  const lastAskUserQuestionId = useMemo( () => {
+    for ( let i = streamMessages.length - 1; i >= 0; i-- ) {
+      const msg = streamMessages[i];
+      if ( msg.type === "assistant" && msg.message?.content && Array.isArray( msg.message.content ) ) {
+        for ( let j = msg.message.content.length - 1; j >= 0; j-- ) {
+          const c = msg.message.content[j];
+          if ( c.type === "tool_use" && c.name?.toLowerCase() === "askuserquestion" ) {
+            return c.id as string | undefined;
+          }
+        }
+      }
+    }
+    return undefined;
+  }, [streamMessages] );
+
   // Extract all tool results from stream messages
   useEffect(() => {
     const results = new Map<string, any>();
@@ -131,6 +150,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       
       let renderedSomething = false;
       
+      const hasToolUse = msg.content && Array.isArray( msg.content ) &&
+        msg.content.some( ( c: any ) => c.type === "tool_use" );
+
       const renderedCard = (
         <Card className={cn("border-primary/20 bg-primary/5", className)}>
           <CardContent className="p-4">
@@ -139,6 +161,9 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                 <Bot className="h-5 w-5 text-primary mt-0.5" />
                 {modelDisplayName && (
                   <span className="text-[10px] text-muted-foreground leading-tight">{modelDisplayName}</span>
+                )}
+                {hasToolUse && (
+                  <Wrench className="h-3.5 w-3.5 text-muted-foreground mt-1" />
                 )}
               </div>
               <div className="flex-1 space-y-2 min-w-0">
@@ -288,7 +313,20 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                         renderedSomething = true;
                         return <WebFetchWidget url={input.url} prompt={input.prompt} result={toolResult} />;
                       }
-                      
+
+                      // AskUserQuestion tool
+                      if ( toolName === "askuserquestion" && input?.questions ) {
+                        renderedSomething = true;
+                        const isInteractive = toolId === lastAskUserQuestionId && !toolResult;
+                        return (
+                          <AskUserQuestionWidget
+                            questions={input.questions}
+                            isInteractive={isInteractive}
+                            onSubmit={onSendPrompt}
+                          />
+                        );
+                      }
+
                       // Default - return null
                       return null;
                     };
@@ -404,7 +442,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
                           const toolUse = prevMsg.message.content.find((c: any) => c.type === 'tool_use' && c.id === content.tool_use_id);
                           if (toolUse) {
                             const toolName = toolUse.name?.toLowerCase();
-                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
+                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch','askuserquestion'];
                             if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
                               hasCorrespondingWidget = true;
                             }

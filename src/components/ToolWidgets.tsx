@@ -34,6 +34,9 @@ import {
   Package2,
   Wrench,
   CheckSquare,
+  Square,
+  HelpCircle,
+  Send,
   type LucideIcon,
   Sparkles,
   Bot,
@@ -2995,6 +2998,248 @@ export const TodoReadWidget: React.FC<{ todos?: any[]; result?: any }> = ({ todo
           <StatsView />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+};
+
+/**
+ * Widget for AskUserQuestion tool - renders interactive question cards
+ */
+interface AskUserQuestionWidgetProps {
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect: boolean;
+  }>;
+  isInteractive: boolean;
+  onSubmit?: ( answer: string ) => void;
+}
+
+export const AskUserQuestionWidget: React.FC<AskUserQuestionWidgetProps> = ({ questions, isInteractive, onSubmit }) => {
+  // Track selections per question index — single-select stores a string, multi-select stores a Set
+  const [selections, setSelections] = useState<Map<number, Set<string>>>( () => {
+    const init = new Map<number, Set<string>>();
+    questions.forEach( ( _, i ) => init.set( i, new Set() ) );
+    return init;
+  });
+  // Track "Other" text per question
+  const [otherTexts, setOtherTexts] = useState<Map<number, string>>( () => {
+    const init = new Map<number, string>();
+    questions.forEach( ( _, i ) => init.set( i, "" ) );
+    return init;
+  });
+  const [isSubmitted, setIsSubmitted] = useState( false );
+
+  const OTHER_KEY = "__other__";
+
+  const toggleSelection = ( questionIdx: number, label: string, multiSelect: boolean ) => {
+    if ( !isInteractive || isSubmitted ) return;
+
+    setSelections( prev => {
+      const next = new Map( prev );
+      const current = new Set( prev.get( questionIdx ) || [] );
+
+      if ( multiSelect ) {
+        if ( current.has( label ) ) {
+          current.delete( label );
+        } else {
+          current.add( label );
+        }
+      } else {
+        // Single-select: replace
+        current.clear();
+        current.add( label );
+      }
+
+      next.set( questionIdx, current );
+      return next;
+    });
+  };
+
+  const handleOtherTextChange = ( questionIdx: number, text: string ) => {
+    setOtherTexts( prev => {
+      const next = new Map( prev );
+      next.set( questionIdx, text );
+      return next;
+    });
+  };
+
+  const formatAnswer = (): string => {
+    const parts: string[] = [];
+
+    questions.forEach( ( q, idx ) => {
+      const selected = selections.get( idx ) || new Set();
+      const labels: string[] = [];
+
+      selected.forEach( key => {
+        if ( key === OTHER_KEY ) {
+          const txt = otherTexts.get( idx )?.trim();
+          if ( txt ) labels.push( txt );
+        } else {
+          labels.push( key );
+        }
+      });
+
+      if ( labels.length === 0 ) return;
+
+      if ( questions.length === 1 ) {
+        parts.push( labels.join( ", " ) );
+      } else {
+        parts.push( `**${q.header}**: ${labels.join( ", " )}` );
+      }
+    });
+
+    return parts.join( "\n" );
+  };
+
+  const handleSubmit = () => {
+    if ( isSubmitted ) return;
+    const answer = formatAnswer();
+    if ( !answer ) return;
+    setIsSubmitted( true );
+    onSubmit?.( answer );
+  };
+
+  const hasSelection = Array.from( selections.values() ).some( s => {
+    if ( s.size === 0 ) return false;
+    // If only "other" is selected, require text
+    if ( s.size === 1 && s.has( OTHER_KEY ) ) {
+      const idx = Array.from( selections.entries() ).find( ( [, v] ) => v === s )?.[0];
+      return idx !== undefined && ( otherTexts.get( idx )?.trim() || "" ).length > 0;
+    }
+    return true;
+  });
+
+  return (
+    <div className="rounded-lg border bg-background overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 border-b">
+        <HelpCircle className="h-3.5 w-3.5 text-purple-500" />
+        <span className="text-xs font-medium text-muted-foreground">Question from Claude</span>
+        {isSubmitted && (
+          <div className="ml-auto flex items-center gap-1 text-xs text-green-500">
+            <CheckCircle2 className="h-3 w-3" />
+            <span>Answered</span>
+          </div>
+        )}
+      </div>
+
+      {/* Questions */}
+      <div className="p-4 space-y-5">
+        {questions.map( ( q, qIdx ) => {
+          const selected = selections.get( qIdx ) || new Set();
+          const isOtherSelected = selected.has( OTHER_KEY );
+
+          return (
+            <div key={qIdx} className="space-y-3">
+              {/* Question header badge + text */}
+              <div className="space-y-1.5">
+                <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-500 border-purple-500/20">
+                  {q.header}
+                </Badge>
+                <p className="text-sm font-medium">{q.question}</p>
+              </div>
+
+              {/* Option cards */}
+              <div className="grid gap-2">
+                {q.options.map( ( opt ) => {
+                  const isSelected = selected.has( opt.label );
+                  const SelectIcon = q.multiSelect
+                    ? ( isSelected ? CheckSquare : Square )
+                    : ( isSelected ? CheckCircle2 : Circle );
+
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      disabled={!isInteractive || isSubmitted}
+                      onClick={() => toggleSelection( qIdx, opt.label, q.multiSelect )}
+                      className={cn(
+                        "flex items-start gap-3 p-3 rounded-lg border text-left transition-colors",
+                        isSelected
+                          ? "border-purple-500/40 bg-purple-500/10"
+                          : "border-border bg-card/50 hover:bg-muted/50",
+                        ( !isInteractive || isSubmitted ) && "opacity-70 cursor-default"
+                      )}
+                    >
+                      <SelectIcon className={cn(
+                        "h-4 w-4 mt-0.5 shrink-0",
+                        isSelected ? "text-purple-500" : "text-muted-foreground"
+                      )} />
+                      <div className="space-y-0.5 min-w-0">
+                        <span className={cn( "text-sm font-medium", isSelected && "text-purple-500" )}>
+                          {opt.label}
+                        </span>
+                        {opt.description && (
+                          <p className="text-xs text-muted-foreground">{opt.description}</p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {/* "Other" option */}
+                <button
+                  type="button"
+                  disabled={!isInteractive || isSubmitted}
+                  onClick={() => toggleSelection( qIdx, OTHER_KEY, q.multiSelect )}
+                  className={cn(
+                    "flex items-start gap-3 p-3 rounded-lg border text-left transition-colors",
+                    isOtherSelected
+                      ? "border-purple-500/40 bg-purple-500/10"
+                      : "border-border bg-card/50 hover:bg-muted/50",
+                    ( !isInteractive || isSubmitted ) && "opacity-70 cursor-default"
+                  )}
+                >
+                  {(() => {
+                    const OtherIcon = q.multiSelect
+                      ? ( isOtherSelected ? CheckSquare : Square )
+                      : ( isOtherSelected ? CheckCircle2 : Circle );
+                    return (
+                      <OtherIcon className={cn(
+                        "h-4 w-4 mt-0.5 shrink-0",
+                        isOtherSelected ? "text-purple-500" : "text-muted-foreground"
+                      )} />
+                    );
+                  })()}
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <span className={cn( "text-sm font-medium", isOtherSelected && "text-purple-500" )}>
+                      Other
+                    </span>
+                    {isOtherSelected && isInteractive && !isSubmitted && (
+                      <Input
+                        autoFocus
+                        placeholder="Type your answer..."
+                        value={otherTexts.get( qIdx ) || ""}
+                        onChange={( e ) => handleOtherTextChange( qIdx, e.target.value )}
+                        onClick={( e ) => e.stopPropagation()}
+                        className="text-sm h-8"
+                      />
+                    )}
+                    {isOtherSelected && ( isSubmitted || !isInteractive ) && otherTexts.get( qIdx ) && (
+                      <p className="text-xs text-muted-foreground">{otherTexts.get( qIdx )}</p>
+                    )}
+                  </div>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Submit button */}
+        {isInteractive && !isSubmitted && (
+          <Button
+            size="sm"
+            disabled={!hasSelection}
+            onClick={handleSubmit}
+            className="gap-2"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Submit Answer
+          </Button>
+        )}
+      </div>
     </div>
   );
 };

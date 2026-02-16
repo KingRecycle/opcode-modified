@@ -489,7 +489,7 @@ export function AgentRunOutputViewer({
                     const toolUse = prevMsg.message.content.find((c: any) => c.type === 'tool_use' && c.id === content.tool_use_id);
                     if (toolUse) {
                       const toolName = toolUse.name?.toLowerCase();
-                      const toolsWithWidgets = ['task','edit','multiedit','todowrite','ls','read','glob','bash','write','grep'];
+                      const toolsWithWidgets = ['task','edit','multiedit','todowrite','ls','read','glob','bash','write','grep','askuserquestion'];
                       if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
                         willBeSkipped = true;
                       }
